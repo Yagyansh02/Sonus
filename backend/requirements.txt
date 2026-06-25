@@ -13,8 +13,7 @@ langchain-groq>=1.1.0
 langchain-huggingface>=1.2.0
 langchain-text-splitters>=0.3.0
 
-# ── Vector Store & Embeddings ────────────────────────────────────
-chromadb>=1.5.0
+# ── Embeddings ───────────────────────────────────────────────────
 sentence-transformers>=5.5.0
 
 # ── YouTube ──────────────────────────────────────────────────────

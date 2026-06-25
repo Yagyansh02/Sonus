@@ -40,24 +40,6 @@ def extract_video_id(url: str) -> str | None:
     return None
 
 
-def sanitize_collection_name(name: str) -> str:
-    """
-    Sanitize a string for use as a Chroma collection name.
-
-    Chroma requires: 3-63 chars, starts/ends with alphanumeric,
-    only contains alphanumeric, underscores, or hyphens.
-    """
-    # Replace non-alphanumeric chars with underscores
-    clean = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
-    # Strip leading/trailing non-alphanumeric
-    clean = clean.strip("_-")
-    # Ensure minimum length
-    if len(clean) < 3:
-        clean = f"col_{clean}"
-    # Truncate to max length
-    return clean[:63]
-
-
 def truncate_text(text: str, max_length: int = 500) -> str:
     """Truncate text to a maximum length with ellipsis."""
     if len(text) <= max_length:

@@ -6,8 +6,8 @@ Orchestrates the full song ingestion pipeline:
   2. Fetch metadata from YouTube
   3. Retrieve transcript (with fallback)
   4. Extract genre & cultural themes via LLM
-  5. Create vector index
-  6. Store everything in Neo4j
+  5. Chunk transcript and embed into Neo4j Chunk nodes
+  6. Store Song, Transcript in Neo4j
 """
 
 import json
@@ -81,7 +81,7 @@ async def ingest_song(youtube_url: str, neo4j_session: AsyncSession) -> Song:
     existing record without re-processing.
 
     Args:
-        youtube_url: Full YouTube video URL.
+        youtube_url:   Full YouTube video URL.
         neo4j_session: Active Neo4j async session.
 
     Returns:
@@ -125,23 +125,7 @@ async def ingest_song(youtube_url: str, neo4j_session: AsyncSession) -> Song:
         era=enrichment["era"],
     )
 
-    # ── 6. Create vector index ───────────────────────────────────
-    from langchain_core.documents import Document
-
-    documents = [
-        Document(
-            page_content=transcript_content,
-            metadata={
-                "song_id": song_id,
-                "title": song.title,
-                "artist": song.artist,
-                "source": transcript_source,
-            },
-        )
-    ]
-    vector_service.create_or_load_index(song_id, documents)
-
-    # ── 7. Store in Neo4j ────────────────────────────────────────
+    # ── 6. Store in Neo4j ────────────────────────────────────────
     await neo4j_service.create_song(neo4j_session, song)
 
     transcript = Transcript(
@@ -151,6 +135,23 @@ async def ingest_song(youtube_url: str, neo4j_session: AsyncSession) -> Song:
         source=transcript_source,
     )
     await neo4j_service.create_transcript(neo4j_session, transcript)
+
+    # ── 7. Chunk & embed transcript into Neo4j Chunk nodes ───────
+    # Guard: skip if chunks already exist (idempotent re-ingestion)
+    has_chunks = await neo4j_service.song_has_chunks(neo4j_session, song_id)
+    if not has_chunks:
+        chunks = vector_service.chunk_and_embed(
+            song_id=song_id,
+            transcript_content=transcript_content,
+            metadata={
+                "title": song.title,
+                "artist": song.artist,
+                "source": transcript_source,
+            },
+        )
+        await neo4j_service.store_chunks(neo4j_session, song_id, chunks)
+    else:
+        logger.info(f"Chunks already exist for song {song_id}, skipping re-embedding")
 
     logger.info(
         f"Song ingested: {song_id} | '{song.title}' by {song.artist} | "

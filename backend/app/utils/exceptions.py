@@ -67,15 +67,6 @@ class TranslationError(SonusException):
         )
 
 
-class VectorStoreError(SonusException):
-    def __init__(self, detail: str = "Vector store operation failed"):
-        super().__init__(
-            message=detail,
-            error_code="VECTOR_STORE_ERROR",
-            status_code=500,
-        )
-
-
 class RAGProcessingError(SonusException):
     def __init__(self, detail: str = "RAG pipeline processing failed"):
         super().__init__(

@@ -25,10 +25,9 @@ class Settings(BaseSettings):
     GROQ_TEMPERATURE: float = 0.3
 
     # ── Embeddings ────────────────────────────────────────────────
+    # all-MiniLM-L6-v2 produces 384-dimensional dense vectors.
+    # Changing this model requires recreating the Neo4j vector index.
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
-
-    # ── Vector Store ──────────────────────────────────────────────
-    CHROMA_PERSIST_DIR: str = "./chroma_data"
 
     # ── ElevenLabs (Speech-to-Text Fallback) ──────────────────────
     ELEVENLABS_API_KEY: str = ""

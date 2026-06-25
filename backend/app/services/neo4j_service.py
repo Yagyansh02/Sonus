@@ -211,6 +211,84 @@ async def link_session_to_song(
     logger.info(f"Linked session {session_id} -> song {song_id}")
 
 
+# ── Chunk (Vector Embeddings) ─────────────────────────────────────
+
+async def store_chunks(
+    session: AsyncSession,
+    song_id: str,
+    chunks: list[dict],
+) -> None:
+    """
+    Bulk upsert Chunk nodes and link them to their Song.
+
+    Each dict in ``chunks`` must have:
+        chunk_id    (str)       – unique identifier
+        content     (str)       – chunk text
+        embedding   (list[float]) – HuggingFace embedding vector
+        chunk_index (int)       – positional order within the song
+
+    Args:
+        session:  Active Neo4j async session.
+        song_id:  The owning song's ID.
+        chunks:   List of chunk dicts produced by vector_service.chunk_and_embed().
+    """
+    for chunk in chunks:
+        await session.run(
+            Q.UPSERT_CHUNK,
+            chunk_id=chunk["chunk_id"],
+            song_id=song_id,
+            content=chunk["content"],
+            embedding=chunk["embedding"],
+            chunk_index=chunk["chunk_index"],
+        )
+    logger.info(f"Stored {len(chunks)} chunks for song {song_id}")
+
+
+async def search_similar_chunks(
+    session: AsyncSession,
+    song_id: str,
+    query_embedding: list[float],
+    k: int = 4,
+) -> list[dict]:
+    """
+    Retrieve the k most semantically similar lyric chunks for a specific song.
+
+    Uses exact KNN via graph traversal and real-time cosine similarity — NOT
+    global ANN post-filtering — so recall is perfect regardless of k.
+
+    Args:
+        session:         Active Neo4j async session.
+        song_id:         Restrict search to this song's chunks only.
+        query_embedding: Embedded question vector (384 dims).
+        k:               Number of top chunks to return.
+
+    Returns:
+        List of dicts with keys: content, chunk_index, score.
+    """
+    result = await session.run(
+        Q.SEARCH_SIMILAR_CHUNKS,
+        song_id=song_id,
+        query_embedding=query_embedding,
+        k=k,
+    )
+    records = [record async for record in result]
+    return [
+        {
+            "content": record["content"],
+            "chunk_index": record["chunk_index"],
+            "score": record["score"],
+        }
+        for record in records
+    ]
+
+
+async def song_has_chunks(session: AsyncSession, song_id: str) -> bool:
+    """Return True if the song already has Chunk nodes stored in Neo4j."""
+    result = await session.run(Q.SONG_HAS_CHUNKS, song_id=song_id)
+    record = await result.single()
+    return bool(record and record["chunk_count"] > 0)
+
+
 # ── Setup ────────────────────────────────────────────────────────
 
 async def setup_constraints(session: AsyncSession) -> None:
@@ -222,3 +300,12 @@ async def setup_constraints(session: AsyncSession) -> None:
             # Some Neo4j editions don't support all constraint types
             logger.warning(f"Constraint setup note: {e}")
     logger.info("Neo4j constraints initialized")
+
+
+async def setup_vector_index(session: AsyncSession) -> None:
+    """Create the Chunk embedding vector index. Safe to call repeatedly (IF NOT EXISTS)."""
+    try:
+        await session.run(Q.SETUP_VECTOR_INDEX)
+        logger.info("Neo4j vector index initialized (chunk_embedding_index)")
+    except Exception as e:
+        logger.warning(f"Vector index setup note: {e}")

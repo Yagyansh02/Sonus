@@ -55,7 +55,7 @@ def setup_logging() -> logging.Logger:
         logger.addHandler(handler)
 
     # Silence noisy third-party loggers
-    for noisy in ("chromadb", "httpx", "httpcore", "neo4j"):
+    for noisy in ("httpx", "httpcore", "neo4j"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     return logger

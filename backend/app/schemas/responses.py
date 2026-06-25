@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 class ServiceStatus(BaseModel):
     neo4j: str = "unknown"
-    vector_store: str = "unknown"
 
 
 class HealthResponse(BaseModel):

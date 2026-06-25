@@ -14,6 +14,7 @@ Nodes:
   (:Session)        – conversation session
   (:Genre)          – music genre
   (:CulturalTheme)  – thematic tag
+  (:Chunk)          – lyric chunk with embedding vector
 
 Relationships:
   (Artist)-[:CREATED]->(Song)
@@ -22,6 +23,7 @@ Relationships:
   (Song)-[:BELONGS_TO_GENRE]->(Genre)
   (Song)-[:HAS_CULTURAL_THEME]->(CulturalTheme)
   (Session)-[:ASKED]->(Song)
+  (Song)-[:HAS_CHUNK]->(Chunk)
 """
 
 # ── Constraints & Indexes (run once at startup) ──────────────────
@@ -34,7 +36,22 @@ SETUP_CONSTRAINTS = [
     "CREATE CONSTRAINT session_id_unique IF NOT EXISTS FOR (s:Session) REQUIRE s.session_id IS UNIQUE",
     "CREATE CONSTRAINT genre_name_unique IF NOT EXISTS FOR (g:Genre) REQUIRE g.name IS UNIQUE",
     "CREATE CONSTRAINT theme_name_unique IF NOT EXISTS FOR (ct:CulturalTheme) REQUIRE ct.name IS UNIQUE",
+    "CREATE CONSTRAINT chunk_id_unique IF NOT EXISTS FOR (c:Chunk) REQUIRE c.chunk_id IS UNIQUE",
 ]
+
+# ── Vector Index (run once at startup) ──────────────────────────
+# all-MiniLM-L6-v2 produces 384-dimensional dense vectors.
+# This index is kept for potential future cross-song graph traversal;
+# per-song RAG uses exact KNN (see SEARCH_SIMILAR_CHUNKS).
+
+SETUP_VECTOR_INDEX = """
+CREATE VECTOR INDEX chunk_embedding_index IF NOT EXISTS
+FOR (c:Chunk) ON (c.embedding)
+OPTIONS {indexConfig: {
+  `vector.dimensions`: 384,
+  `vector.similarity_function`: 'cosine'
+}}
+"""
 
 
 # ── Song ─────────────────────────────────────────────────────────
@@ -168,4 +185,43 @@ MATCH (sess:Session {session_id: $session_id})
 MATCH (s:Song {song_id: $song_id})
 MERGE (sess)-[:ASKED]->(s)
 RETURN sess, s
+"""
+
+
+# ── Chunk (Vector Embeddings) ─────────────────────────────────────
+
+UPSERT_CHUNK = """
+MERGE (c:Chunk {chunk_id: $chunk_id})
+ON CREATE SET
+    c.song_id    = $song_id,
+    c.content    = $content,
+    c.embedding  = $embedding,
+    c.chunk_index = $chunk_index,
+    c.created_at = datetime()
+WITH c
+MATCH (s:Song {song_id: $song_id})
+MERGE (s)-[:HAS_CHUNK]->(c)
+RETURN c
+"""
+
+# Exact KNN: traverse the graph to this song's chunks only, then
+# compute cosine similarity in real-time.  Avoids the post-filtering
+# trap of global ANN search — a single song has only a few dozen chunks,
+# so exact nearest-neighbour is both correct and fast.
+SEARCH_SIMILAR_CHUNKS = """
+MATCH (s:Song {song_id: $song_id})-[:HAS_CHUNK]->(c:Chunk)
+WITH c, vector.similarity.cosine(c.embedding, $query_embedding) AS score
+ORDER BY score DESC
+LIMIT $k
+RETURN c.content AS content, c.chunk_index AS chunk_index, score
+"""
+
+SONG_HAS_CHUNKS = """
+MATCH (s:Song {song_id: $song_id})-[:HAS_CHUNK]->(c:Chunk)
+RETURN count(c) AS chunk_count
+"""
+
+DELETE_SONG_CHUNKS = """
+MATCH (s:Song {song_id: $song_id})-[:HAS_CHUNK]->(c:Chunk)
+DETACH DELETE c
 """

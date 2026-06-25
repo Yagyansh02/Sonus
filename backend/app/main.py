@@ -4,7 +4,7 @@ Sonus API — FastAPI Application Entry Point
 Production-grade cultural song analysis & interpretation engine.
 
 Lifecycle:
-  - Startup:  Initialize Neo4j driver, run constraints, set up logging.
+  - Startup:  Initialize Neo4j driver, run constraints, create vector index, set up logging.
   - Shutdown: Close Neo4j driver gracefully.
 """
 
@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
       1. Configure structured logging
       2. Initialize Neo4j driver and verify connectivity
       3. Run database constraints
+      4. Create vector index on Chunk.embedding
     Shutdown:
       1. Close Neo4j driver
     """
@@ -44,9 +45,10 @@ async def lifespan(app: FastAPI):
     # Initialize Neo4j
     driver = await init_driver()
 
-    # Run constraints
+    # Run constraints and vector index (idempotent — IF NOT EXISTS)
     async with driver.session(database=settings.NEO4J_DATABASE) as session:
         await neo4j_service.setup_constraints(session)
+        await neo4j_service.setup_vector_index(session)
 
     logger.info("Application startup complete")
 
@@ -66,14 +68,15 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         description=(
             "🎵 **Sonus** — A production-grade cultural song analysis & interpretation engine.\n\n"
-            "Powered by Groq LLM, HuggingFace embeddings, Neo4j graph database, "
-            "and a conversational RAG pipeline for deep musical understanding.\n\n"
+            "Powered by Groq LLM, HuggingFace embeddings, and Neo4j — a unified graph database "
+            "that stores song relationships, lyrics, translations, and vector embeddings "
+            "in a single consistent store.\n\n"
             "## Features\n"
             "- **Song Ingestion** — YouTube metadata, transcript extraction with ElevenLabs fallback\n"
             "- **Cultural Interpretation** — Ethnomusicologist-level lyric analysis via RAG\n"
             "- **Literary Translation** — Poetic localization preserving artistic intent\n"
             "- **Knowledge Graph** — Neo4j-backed song, artist, genre, and theme relationships\n"
-            "- **Persistent Vectors** — Chroma-based embeddings with per-song isolation\n"
+            "- **Native Vector Search** — Neo4j vector index with exact KNN for per-song RAG\n"
         ),
         version=settings.APP_VERSION,
         lifespan=lifespan,
@@ -106,3 +109,7 @@ def create_app() -> FastAPI:
 
 # The app instance used by uvicorn
 app = create_app()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

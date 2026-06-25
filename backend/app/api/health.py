@@ -1,8 +1,7 @@
 """
 Health check endpoint.
 
-Provides system health status including connectivity
-to Neo4j and vector store availability.
+Provides system health status including connectivity to Neo4j.
 """
 
 from fastapi import APIRouter, Depends
@@ -30,7 +29,7 @@ async def health_check(
     settings = get_settings()
     services = ServiceStatus()
 
-    # Check Neo4j
+    # Check Neo4j (covers both graph and vector capabilities)
     try:
         result = await neo4j_session.run("RETURN 1 AS ping")
         await result.single()
@@ -38,12 +37,6 @@ async def health_check(
     except Exception as e:
         logger.warning(f"Neo4j health check failed: {e}")
         services.neo4j = f"unhealthy: {e}"
-
-    # Check vector store directory
-    from pathlib import Path
-
-    chroma_dir = Path(settings.CHROMA_PERSIST_DIR)
-    services.vector_store = "healthy" if chroma_dir.exists() else "not_initialized"
 
     overall = "ok" if services.neo4j == "healthy" else "degraded"
 

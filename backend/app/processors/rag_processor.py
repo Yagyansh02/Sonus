@@ -2,19 +2,31 @@
 RAG processor.
 
 Orchestrates the conversational retrieval-augmented generation pipeline.
-Migrated from the original main.py setup_rag_agent function with
-persistent vector retrieval and per-session conversation history.
+Uses Neo4j exact KNN graph traversal for context retrieval — no ChromaDB,
+no LangChain retriever chains. This gives absolute control over prompt
+context and eliminates the post-filtering trap of global ANN search.
+
+Pipeline per question:
+  1. Verify song exists in Neo4j.
+  2. Reformulate the question using chat history (history-aware step).
+  3. Embed the reformulated question.
+  4. Run exact KNN against this song's Chunk nodes in Neo4j.
+  5. Format retrieved chunks as context and invoke the LLM.
+  6. Track session in Neo4j (non-fatal).
 """
 
-from langchain_classic.chains import create_retrieval_chain, create_history_aware_retriever
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from neo4j import AsyncSession
 
-from app.config.constants import CONTEXTUALIZE_SYSTEM_PROMPT, ETHNOMUSICOLOGIST_SYSTEM_PROMPT
+from app.config.constants import (
+    CONTEXTUALIZE_SYSTEM_PROMPT,
+    ETHNOMUSICOLOGIST_SYSTEM_PROMPT,
+    RETRIEVER_K,
+)
 from app.services import groq_service, neo4j_service, vector_service
 from app.utils.logger import get_logger
 from app.utils.exceptions import SongNotFoundError, RAGProcessingError
@@ -33,52 +45,37 @@ def _get_session_history(session_key: str) -> BaseChatMessageHistory:
     return _session_memory_store[session_key]
 
 
-# ── Cached RAG chain instances per song ──────────────────────────
-_rag_chain_cache: dict[str, RunnableWithMessageHistory] = {}
-
-
-def _build_rag_chain(song_id: str) -> RunnableWithMessageHistory:
+def _reformulate_question(question: str, history: ChatMessageHistory) -> str:
     """
-    Build the full conversational RAG chain for a given song.
+    Use the LLM to reformulate the user's question into a self-contained query
+    that resolves pronouns and implicit references from chat history.
 
-    Migrated from original main.py setup_rag_agent (lines 113-181).
+    If there is no prior history, the original question is returned unchanged
+    to avoid an unnecessary LLM call.
     """
-    logger.info(f"Building RAG chain for song_id={song_id}")
+    messages = history.messages
+    if not messages:
+        return question
 
-    llm = groq_service.get_llm()
-    retriever = vector_service.get_retriever(song_id)
+    llm = groq_service.get_llm(temperature=0.0)
 
-    # ── History-aware retriever ──────────────────────────────────
-    contextualize_q_prompt = ChatPromptTemplate.from_messages([
+    contextualize_prompt = ChatPromptTemplate.from_messages([
         ("system", CONTEXTUALIZE_SYSTEM_PROMPT),
-        ("placeholder", "{chat_history}"),
+        *[(msg.type, msg.content) for msg in messages],
         ("human", "{input}"),
     ])
 
-    history_aware_retriever = create_history_aware_retriever(
-        llm, retriever, contextualize_q_prompt
-    )
+    chain = contextualize_prompt | llm
+    try:
+        response = chain.invoke({"input": question})
+        reformulated = response.content.strip()
+        if reformulated:
+            logger.debug(f"Reformulated question: '{reformulated[:120]}'")
+            return reformulated
+    except Exception as e:
+        logger.warning(f"Question reformulation failed (using original): {e}")
 
-    # ── Ethnomusicologist answer chain ───────────────────────────
-    qa_prompt = ChatPromptTemplate.from_messages([
-        ("system", ETHNOMUSICOLOGIST_SYSTEM_PROMPT),
-        ("placeholder", "{chat_history}"),
-        ("human", "{input}"),
-    ])
-
-    question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
-    rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-
-    # ── Wrap with message history ────────────────────────────────
-    conversational_rag_chain = RunnableWithMessageHistory(
-        rag_chain,
-        _get_session_history,
-        input_messages_key="input",
-        history_messages_key="chat_history",
-        output_messages_key="answer",
-    )
-
-    return conversational_rag_chain
+    return question
 
 
 async def ask_question(
@@ -91,66 +88,110 @@ async def ask_question(
     Ask a question about a song using the conversational RAG pipeline.
 
     Args:
-        song_id: ID of the song to query against.
-        session_id: Conversation session ID for history tracking.
-        question: The user's question.
+        song_id:       ID of the song to query against.
+        session_id:    Conversation session ID for history tracking.
+        question:      The user's question.
         neo4j_session: Active Neo4j async session.
 
     Returns:
         dict with keys: answer, sources, session_id, song_id
 
     Raises:
-        SongNotFoundError: If the song doesn't exist in Neo4j.
+        SongNotFoundError:  If the song doesn't exist in Neo4j.
         RAGProcessingError: If the RAG pipeline fails.
     """
-    # ── Verify song exists ───────────────────────────────────────
+    # ── 1. Verify song exists ────────────────────────────────────
     song = await neo4j_service.get_song(neo4j_session, song_id)
     if not song:
         raise SongNotFoundError(song_id)
 
-    # ── Get or build RAG chain ───────────────────────────────────
-    if song_id not in _rag_chain_cache:
-        try:
-            _rag_chain_cache[song_id] = _build_rag_chain(song_id)
-        except Exception as e:
-            logger.error(f"Failed to build RAG chain for {song_id}: {e}")
-            raise RAGProcessingError(f"Could not initialize RAG pipeline: {e}")
+    # ── 2. Retrieve / create conversation history ────────────────
+    session_key = f"{session_id}:{song_id}"
+    history = _get_session_history(session_key)
 
-    rag_chain = _rag_chain_cache[song_id]
+    # ── 3. Reformulate question using history ────────────────────
+    try:
+        reformulated_question = _reformulate_question(question, history)
+    except Exception as e:
+        logger.warning(f"Reformulation step failed, using original question: {e}")
+        reformulated_question = question
 
-    # ── Link session to song in Neo4j ────────────────────────────
+    # ── 4. Embed the reformulated question ───────────────────────
+    try:
+        query_embedding = vector_service.embed_text(reformulated_question)
+    except Exception as e:
+        logger.error(f"Embedding failed for question: {e}")
+        raise RAGProcessingError(f"Failed to embed question: {e}")
+
+    # ── 5. Exact KNN: retrieve top-k chunks from Neo4j ───────────
+    try:
+        chunks = await neo4j_service.search_similar_chunks(
+            session=neo4j_session,
+            song_id=song_id,
+            query_embedding=query_embedding,
+            k=RETRIEVER_K,
+        )
+    except Exception as e:
+        logger.error(f"Chunk retrieval failed: {e}")
+        raise RAGProcessingError(f"Failed to retrieve lyric context: {e}")
+
+    if not chunks:
+        logger.warning(
+            f"No chunks found for song {song_id}. "
+            "Song may not have been ingested with vector embeddings."
+        )
+
+    # ── 6. Format context and invoke LLM ────────────────────────
+    context_text = "\n\n---\n\n".join(
+        f"[Chunk {c['chunk_index']}]\n{c['content']}" for c in chunks
+    ) if chunks else "No lyric context available."
+
+    # Inline the system prompt with context (replaces {context} placeholder)
+    system_with_context = ETHNOMUSICOLOGIST_SYSTEM_PROMPT.replace(
+        "{context}", context_text
+    )
+
+    llm = groq_service.get_llm()
+
+    # Build the full message list: system + history + current question
+    history_messages = history.messages
+    messages = [("system", system_with_context)]
+    for msg in history_messages:
+        messages.append((msg.type, msg.content))
+    messages.append(("human", question))
+
+    prompt = ChatPromptTemplate.from_messages(messages)
+    chain = prompt | llm
+
+    try:
+        logger.info(
+            f"RAG query: song={song_id} session={session_id} "
+            f"chunks={len(chunks)} q='{question[:80]}...'"
+        )
+        response = chain.invoke({})
+        answer = response.content.strip() or "I could not generate an answer."
+    except Exception as e:
+        logger.error(f"LLM invocation failed: {e}")
+        raise RAGProcessingError(f"Failed to process question: {e}")
+
+    # ── 7. Persist turn to in-memory history ────────────────────
+    history.add_message(HumanMessage(content=question))
+    history.add_message(AIMessage(content=answer))
+
+    # ── 8. Track session in Neo4j (non-fatal) ───────────────────
     try:
         await neo4j_service.create_or_get_session(neo4j_session, session_id)
         await neo4j_service.link_session_to_song(neo4j_session, session_id, song_id)
     except Exception as e:
         logger.warning(f"Session tracking failed (non-fatal): {e}")
 
-    # ── Invoke the RAG chain ─────────────────────────────────────
-    session_key = f"{session_id}:{song_id}"
-    config = {"configurable": {"session_id": session_key}}
+    sources = [c["content"][:200].strip() for c in chunks if c["content"].strip()]
 
-    try:
-        logger.info(f"RAG query: song={song_id} session={session_id} q='{question[:80]}...'")
-        response = rag_chain.invoke({"input": question}, config=config)
+    logger.info(f"RAG response generated: {len(answer)} chars, {len(sources)} sources")
 
-        # Extract source chunks
-        sources = []
-        if "context" in response:
-            for doc in response["context"]:
-                snippet = doc.page_content[:200].strip()
-                if snippet:
-                    sources.append(snippet)
-
-        answer = response.get("answer", "I could not generate an answer.")
-        logger.info(f"RAG response generated: {len(answer)} chars, {len(sources)} sources")
-
-        return {
-            "answer": answer,
-            "sources": sources,
-            "session_id": session_id,
-            "song_id": song_id,
-        }
-
-    except Exception as e:
-        logger.error(f"RAG processing failed: {e}")
-        raise RAGProcessingError(f"Failed to process question: {e}")
+    return {
+        "answer": answer,
+        "sources": sources,
+        "session_id": session_id,
+        "song_id": song_id,
+    }
