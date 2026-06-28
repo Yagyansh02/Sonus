@@ -8,17 +8,18 @@ from fastapi import APIRouter, Depends
 from neo4j import AsyncSession
 
 from app.database.neo4j import get_neo4j_session
-from app.schemas.responses import TranscriptResponse, ErrorResponse
+from app.schemas.transcript import TranscriptResponse
+from app.schemas.error import ErrorResponse
 from app.services import neo4j_service
 from app.utils.exceptions import SongNotFoundError, TranscriptNotFoundError
 from app.utils.logger import get_logger
 
 logger = get_logger("api.transcript")
-router = APIRouter(tags=["Transcript"])
+router = APIRouter(prefix="/transcript", tags=["Transcript"])
 
 
 @router.get(
-    "/song/{song_id}/transcript",
+    "/{song_id}",
     response_model=TranscriptResponse,
     responses={
         404: {"model": ErrorResponse, "description": "Song or transcript not found"},

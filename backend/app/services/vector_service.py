@@ -19,6 +19,7 @@ from app.config.constants import (
     RETRIEVER_K,
 )
 from app.config.settings import get_settings
+from app.schemas.chunk import LyricChunk
 from app.utils.helpers import generate_id
 from app.utils.logger import get_logger
 
@@ -74,11 +75,11 @@ def chunk_and_embed(
     song_id: str,
     transcript_content: str,
     metadata: dict | None = None,
-) -> list[dict]:
+) -> list[LyricChunk]:
     """
-    Chunk a transcript and embed each chunk, returning Neo4j-ready dicts.
+    Chunk a transcript and embed each chunk, returning typed LyricChunk DTOs.
 
-    Each returned dict has:
+    Each returned LyricChunk has:
         chunk_id    (str)         – unique identifier (UUID hex)
         song_id     (str)         – owning song
         content     (str)         – chunk text
@@ -91,7 +92,7 @@ def chunk_and_embed(
         metadata:            Optional extra metadata attached to each chunk.
 
     Returns:
-        List of chunk dicts ready for neo4j_service.store_chunks().
+        List of LyricChunk DTOs ready for neo4j_service.store_chunks().
     """
     doc_metadata: dict = {"song_id": song_id}
     if metadata:
@@ -106,15 +107,16 @@ def chunk_and_embed(
     # Batch embed all chunks in one call (more efficient than one-by-one)
     vectors = embedder.embed_documents(texts)
 
-    result = []
-    for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
-        result.append({
-            "chunk_id": generate_id(),
-            "song_id": song_id,
-            "content": chunk.page_content,
-            "embedding": vector,
-            "chunk_index": idx,
-        })
+    result: list[LyricChunk] = [
+        LyricChunk(
+            chunk_id=generate_id(),
+            song_id=song_id,
+            content=chunk.page_content,
+            embedding=vector,
+            chunk_index=idx,
+        )
+        for idx, (chunk, vector) in enumerate(zip(chunks, vectors))
+    ]
 
     logger.info(f"Embedded {len(result)} chunks for song {song_id}")
     return result

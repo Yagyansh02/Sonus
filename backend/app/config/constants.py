@@ -80,14 +80,7 @@ TRANSLATION_SYSTEM_PROMPT = (
     "5. **Cultural references** — adapt references so they resonate with the target audience, "
     "with translator notes explaining the original.\n"
     "6. **Slang & idioms** — use natural equivalents from the target language's vernacular.\n"
-    "7. **Artistic intent** — honor the songwriter's creative choices.\n\n"
-    "═══ OUTPUT FORMAT ═══\n\n"
-    "Respond with ONLY valid JSON (no markdown fences, no extra text):\n"
-    "{{\n"
-    '  "translated_lyrics": "<the full translated lyrics, preserving line breaks>",\n'
-    '  "translation_notes": "<brief notes on key adaptation choices, cultural swaps, and meaning preservation>",\n'
-    '  "confidence_score": <float 0.0-1.0 reflecting your confidence in the translation quality>\n'
-    "}}"
+    "7. **Artistic intent** — honor the songwriter's creative choices."
 )
 
 # ── Prompt: Genre & Cultural Theme Extraction ────────────────────
@@ -97,14 +90,6 @@ METADATA_EXTRACTION_PROMPT = (
     "Song Title: {title}\n"
     "Artist: {artist}\n"
     "Lyrics (excerpt):\n{lyrics_excerpt}\n\n"
-    "Respond with ONLY valid JSON (no markdown fences, no extra text):\n"
-    "{{\n"
-    '  "genres": ["<primary genre>", "<secondary genre if applicable>"],\n'
-    '  "cultural_themes": ["<theme1>", "<theme2>", "<theme3>"],\n'
-    '  "language": "<detected language of the lyrics>",\n'
-    '  "mood": "<overall emotional mood>",\n'
-    '  "era": "<approximate musical era or decade>"\n'
-    "}}\n\n"
     "For genres, use established genre names (e.g., Hip-Hop, Bollywood Pop, K-Pop, R&B, etc.).\n"
     "For cultural_themes, identify 2-4 dominant themes (e.g., Heartbreak, Social Justice, "
     "Self-empowerment, Nostalgia, Street Life, Devotion, etc.).\n"

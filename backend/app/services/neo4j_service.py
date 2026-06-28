@@ -12,6 +12,7 @@ from app.entities.song import Song
 from app.entities.transcript import Transcript
 from app.entities.translation import Translation
 from app.entities.session import Session
+from app.schemas.chunk import LyricChunk
 from app.utils.logger import get_logger
 
 logger = get_logger("services.neo4j")
@@ -216,30 +217,24 @@ async def link_session_to_song(
 async def store_chunks(
     session: AsyncSession,
     song_id: str,
-    chunks: list[dict],
+    chunks: list[LyricChunk],
 ) -> None:
     """
     Bulk upsert Chunk nodes and link them to their Song.
 
-    Each dict in ``chunks`` must have:
-        chunk_id    (str)       – unique identifier
-        content     (str)       – chunk text
-        embedding   (list[float]) – HuggingFace embedding vector
-        chunk_index (int)       – positional order within the song
-
     Args:
         session:  Active Neo4j async session.
         song_id:  The owning song's ID.
-        chunks:   List of chunk dicts produced by vector_service.chunk_and_embed().
+        chunks:   List of LyricChunk DTOs produced by vector_service.chunk_and_embed().
     """
     for chunk in chunks:
         await session.run(
             Q.UPSERT_CHUNK,
-            chunk_id=chunk["chunk_id"],
+            chunk_id=chunk.chunk_id,
             song_id=song_id,
-            content=chunk["content"],
-            embedding=chunk["embedding"],
-            chunk_index=chunk["chunk_index"],
+            content=chunk.content,
+            embedding=chunk.embedding,
+            chunk_index=chunk.chunk_index,
         )
     logger.info(f"Stored {len(chunks)} chunks for song {song_id}")
 

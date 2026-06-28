@@ -10,16 +10,16 @@ from neo4j import AsyncSession
 
 from app.database.neo4j import get_neo4j_session
 from app.processors import song_processor
-from app.schemas.requests import SongIngestRequest
-from app.schemas.responses import SongIngestResponse, ErrorResponse
+from app.schemas.song import SongIngestRequest, SongIngestResponse
+from app.schemas.error import ErrorResponse
 from app.utils.logger import get_logger
 
 logger = get_logger("api.songs")
-router = APIRouter(tags=["Songs"])
+router = APIRouter(prefix="/song", tags=["Songs"])
 
 
 @router.post(
-    "/song/ingest",
+    "/ingest",
     response_model=SongIngestResponse,
     responses={
         404: {"model": ErrorResponse, "description": "Transcript not found"},

@@ -9,15 +9,15 @@ from neo4j import AsyncSession
 
 from app.config.settings import get_settings
 from app.database.neo4j import get_neo4j_session
-from app.schemas.responses import HealthResponse, ServiceStatus
+from app.schemas.health import HealthResponse, ServiceStatus
 from app.utils.logger import get_logger
 
 logger = get_logger("api.health")
-router = APIRouter(tags=["Health"])
+router = APIRouter(prefix="/health", tags=["Health"])
 
 
 @router.get(
-    "/health",
+    "",
     response_model=HealthResponse,
     summary="System health check",
     description="Returns the health status of the Sonus API and its dependencies.",

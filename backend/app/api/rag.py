@@ -10,16 +10,16 @@ from neo4j import AsyncSession
 
 from app.database.neo4j import get_neo4j_session
 from app.processors import rag_processor
-from app.schemas.requests import RAGAskRequest
-from app.schemas.responses import RAGAskResponse, ErrorResponse
+from app.schemas.rag import RAGAskRequest, RAGAskResponse
+from app.schemas.error import ErrorResponse
 from app.utils.logger import get_logger
 
 logger = get_logger("api.rag")
-router = APIRouter(tags=["RAG - Cultural Interpretation"])
+router = APIRouter(prefix="/rag", tags=["RAG - Cultural Interpretation"])
 
 
 @router.post(
-    "/rag/ask",
+    "/ask",
     response_model=RAGAskResponse,
     responses={
         404: {"model": ErrorResponse, "description": "Song not found"},

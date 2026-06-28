@@ -116,7 +116,7 @@ export default function Home() {
 
           {activeTab === "transcript" && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">GET /api/song/{"{song_id}"}/transcript</h2>
+              <h2 className="text-xl font-semibold mb-4">GET /api/transcript/{"{song_id}"}</h2>
               <div className="flex flex-col gap-4 max-w-md">
                 <input 
                   type="text" 
@@ -126,7 +126,7 @@ export default function Home() {
                   onChange={(e) => setSongId(e.target.value)}
                 />
                 <button 
-                  onClick={() => handleRequest(`/song/${songId}/transcript`)}
+                  onClick={() => handleRequest(`/transcript/${songId}`)}
                   className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                 >
                   Get Transcript
@@ -137,7 +137,7 @@ export default function Home() {
 
           {activeTab === "translate" && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">POST /api/translate</h2>
+              <h2 className="text-xl font-semibold mb-4">POST /api/translation/translate</h2>
               <div className="flex flex-col gap-4 max-w-md">
                 <input 
                   type="text" 
@@ -161,16 +161,16 @@ export default function Home() {
                   onChange={(e) => setTargetLanguage(e.target.value)}
                 />
                 <button 
-                  onClick={() => handleRequest("/translate", "POST", { song_id: songId || undefined, youtube_url: youtubeUrl || undefined, target_language: targetLanguage })}
+                  onClick={() => handleRequest("/translation/translate", "POST", { song_id: songId || undefined, youtube_url: youtubeUrl || undefined, target_language: targetLanguage })}
                   className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                 >
                   Translate
                 </button>
 
                 <hr className="my-4" />
-                <h3 className="text-lg font-semibold">GET /api/song/{"{song_id}"}/translations</h3>
+                <h3 className="text-lg font-semibold">GET /api/translation/song/{"{song_id}"}</h3>
                 <button 
-                  onClick={() => handleRequest(`/song/${songId}/translations`)}
+                  onClick={() => handleRequest(`/translation/song/${songId}`)}
                   className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
                 >
                   List Translations

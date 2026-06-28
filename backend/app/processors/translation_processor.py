@@ -60,9 +60,9 @@ async def translate_song(
         translation_id=generate_id(),
         song_id=song_id,
         target_language=target_language,
-        translated_lyrics=result["translated_lyrics"],
-        notes=result["translation_notes"],
-        confidence_score=result["confidence_score"],
+        translated_lyrics=result.translated_lyrics,
+        notes=result.translation_notes,
+        confidence_score=result.confidence_score,
     )
 
     await neo4j_service.create_translation(neo4j_session, translation)

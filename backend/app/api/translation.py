@@ -10,18 +10,18 @@ from neo4j import AsyncSession
 
 from app.database.neo4j import get_neo4j_session
 from app.processors import song_processor, translation_processor
-from app.schemas.requests import TranslateRequest
-from app.schemas.responses import (
-    ErrorResponse,
-    TranslationListResponse,
+from app.schemas.translation import (
+    TranslateRequest,
     TranslationResponse,
+    TranslationListResponse,
 )
+from app.schemas.error import ErrorResponse
 from app.services import neo4j_service
 from app.utils.exceptions import SongNotFoundError
 from app.utils.logger import get_logger
 
 logger = get_logger("api.translation")
-router = APIRouter(tags=["Translation"])
+router = APIRouter(prefix="/translation", tags=["Translation"])
 
 
 @router.post(
@@ -78,7 +78,7 @@ async def translate_song(
 
 
 @router.get(
-    "/song/{song_id}/translations",
+    "/song/{song_id}",
     response_model=TranslationListResponse,
     responses={
         404: {"model": ErrorResponse, "description": "Song not found"},
