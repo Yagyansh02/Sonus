@@ -1,26 +1,96 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ================================================================== */
+/*  Sonus Design System — Global Styles (Tailwind v3.4)                */
+/* ================================================================== */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ----------------------- Base Layer ------------------------------- */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-primary-bg text-primary-text font-body leading-relaxed overflow-x-hidden;
+  }
+
+  /* Typography */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading font-bold text-primary-text;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  h1 { font-size: clamp(2.5rem, 6vw, 5rem); }
+  h2 { font-size: clamp(2rem, 4vw, 3.5rem); }
+  h3 { font-size: clamp(1.5rem, 3vw, 2.25rem); }
+  h4 { font-size: clamp(1.25rem, 2vw, 1.5rem); }
+
+  p {
+    @apply text-secondary-text text-base leading-7;
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: #F15C43;
+    color: #F7F2E8;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0D0D0D;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #222222;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #8D8D8D;
+  }
+
+  /* Focus */
+  :focus-visible {
+    @apply outline-2 outline-accent outline-offset-2 rounded;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ----------------------- Utilities -------------------------------- */
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #F15C43, #FF7B61);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass {
+    background: rgba(27, 27, 27, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 40px rgba(241, 92, 67, 0.15);
+  }
 }
