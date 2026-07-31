@@ -7,14 +7,14 @@ optimized, and tested independently of the service layer.
 ═══ GRAPH MODEL ═══
 
 Nodes:
-  (:Song)           – primary entity
-  (:Artist)         – song creator
-  (:Transcript)     – lyrics text
-  (:Translation)    – translated lyrics
-  (:Session)        – conversation session
-  (:Genre)          – music genre
-  (:CulturalTheme)  – thematic tag
-  (:Chunk)          – lyric chunk with embedding vector
+  (:Song)           -- primary entity
+  (:Artist)         -- song creator
+  (:Transcript)     -- lyrics text
+  (:Translation)    -- translated lyrics
+  (:Session)        -- conversation session
+  (:Genre)          -- music genre
+  (:CulturalTheme)  -- thematic tag
+  (:Chunk)          -- lyric chunk with embedding vector and section label
 
 Relationships:
   (Artist)-[:CREATED]->(Song)
@@ -51,6 +51,17 @@ OPTIONS {indexConfig: {
   `vector.dimensions`: 384,
   `vector.similarity_function`: 'cosine'
 }}
+"""
+
+# ── Full-Text (BM25) Index (run once at startup) ──────────────
+# Index Chunk.content so we can run full-text (BM25-scored) keyword
+# queries alongside vector search. Results are always scoped to a
+# single song via WHERE node.song_id = $song_id in the query, so
+# there is no cross-song contamination despite the index being global.
+
+SETUP_BM25_INDEX = """
+CREATE FULLTEXT INDEX chunk_content_bm25_index IF NOT EXISTS
+FOR (c:Chunk) ON EACH [c.content]
 """
 
 
@@ -193,11 +204,12 @@ RETURN sess, s
 UPSERT_CHUNK = """
 MERGE (c:Chunk {chunk_id: $chunk_id})
 ON CREATE SET
-    c.song_id    = $song_id,
-    c.content    = $content,
-    c.embedding  = $embedding,
-    c.chunk_index = $chunk_index,
-    c.created_at = datetime()
+    c.song_id      = $song_id,
+    c.content      = $content,
+    c.embedding    = $embedding,
+    c.chunk_index  = $chunk_index,
+    c.section_type = $section_type,
+    c.created_at   = datetime()
 WITH c
 MATCH (s:Song {song_id: $song_id})
 MERGE (s)-[:HAS_CHUNK]->(c)
@@ -206,14 +218,29 @@ RETURN c
 
 # Exact KNN: traverse the graph to this song's chunks only, then
 # compute cosine similarity in real-time.  Avoids the post-filtering
-# trap of global ANN search — a single song has only a few dozen chunks,
+# trap of global ANN search -- a single song has only a few dozen chunks,
 # so exact nearest-neighbour is both correct and fast.
 SEARCH_SIMILAR_CHUNKS = """
 MATCH (s:Song {song_id: $song_id})-[:HAS_CHUNK]->(c:Chunk)
 WITH c, vector.similarity.cosine(c.embedding, $query_embedding) AS score
 ORDER BY score DESC
 LIMIT $k
-RETURN c.content AS content, c.chunk_index AS chunk_index, score
+RETURN c.content AS content, c.chunk_index AS chunk_index,
+       c.section_type AS section_type, score
+"""
+
+# BM25 full-text search scoped to a specific song.
+# The global full-text index is the retrieval mechanism; WHERE node.song_id
+# constrains results to only this song's chunks before LIMIT is applied,
+# so no cross-song results ever appear.
+SEARCH_BM25_CHUNKS = """
+CALL db.index.fulltext.queryNodes('chunk_content_bm25_index', $query_text)
+YIELD node AS c, score
+WHERE c.song_id = $song_id
+RETURN c.content AS content, c.chunk_index AS chunk_index,
+       c.section_type AS section_type, score
+ORDER BY score DESC
+LIMIT $k
 """
 
 SONG_HAS_CHUNKS = """

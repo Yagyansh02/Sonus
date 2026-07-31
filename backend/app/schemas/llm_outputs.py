@@ -4,6 +4,12 @@ LLM structured output schemas.
 Pydantic models used with ``llm.with_structured_output()`` to replace
 all manual JSON parsing.  The Groq API enforces these schemas at the
 model level, so no fence-stripping or json.loads() is ever needed.
+
+Models:
+  SongMetadata    – genre / theme extraction (song_processor)
+  TranslationResult – literary translation (translation_service)
+  SongSection     – a single labelled musical section (lyrics_structurizer)
+  SongStructure   – ordered list of SongSection (lyrics_structurizer)
 """
 
 from pydantic import BaseModel, Field
@@ -60,4 +66,39 @@ class TranslationResult(BaseModel):
         ge=0.0,
         le=1.0,
         description="Confidence in translation quality between 0.0 and 1.0",
+    )
+
+
+class SongSection(BaseModel):
+    """
+    A single labelled musical section extracted from raw lyrics.
+
+    Used as an element inside ``SongStructure``, which is the structured
+    output type for ``lyrics_structurizer.tag_song_structure()``.
+    """
+
+    section_type: str = Field(
+        ...,
+        description=(
+            "Label for this musical section, e.g. 'Verse 1', 'Chorus', "
+            "'Bridge', 'Outro'. Number repeated sections sequentially."
+        ),
+    )
+    lyrics: str = Field(
+        ...,
+        description="The verbatim lyrics text belonging to this section. Never paraphrased.",
+    )
+
+
+class SongStructure(BaseModel):
+    """
+    Ordered list of musical sections parsed from a raw lyrics transcript.
+
+    Used in ``lyrics_structurizer.tag_song_structure()`` with
+    ``llm.with_structured_output(SongStructure)``.
+    """
+
+    sections: list[SongSection] = Field(
+        ...,
+        description="Ordered list of musical sections covering the entire lyrics, no lines omitted.",
     )

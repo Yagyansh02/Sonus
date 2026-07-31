@@ -29,7 +29,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Sonus — Cultural Song Intelligence',
+    default: 'Sonus ',
     template: '%s | Sonus',
   },
   description:

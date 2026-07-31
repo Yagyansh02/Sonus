@@ -226,6 +226,7 @@ async def store_chunks(
         session:  Active Neo4j async session.
         song_id:  The owning song's ID.
         chunks:   List of LyricChunk DTOs produced by vector_service.chunk_and_embed().
+                  Each chunk carries a section_type from the structural chunking step.
     """
     for chunk in chunks:
         await session.run(
@@ -235,11 +236,12 @@ async def store_chunks(
             content=chunk.content,
             embedding=chunk.embedding,
             chunk_index=chunk.chunk_index,
+            section_type=chunk.section_type,
         )
     logger.info(f"Stored {len(chunks)} chunks for song {song_id}")
 
 
-async def search_similar_chunks(
+async def search_vector_chunks(
     session: AsyncSession,
     song_id: str,
     query_embedding: list[float],
@@ -248,8 +250,8 @@ async def search_similar_chunks(
     """
     Retrieve the k most semantically similar lyric chunks for a specific song.
 
-    Uses exact KNN via graph traversal and real-time cosine similarity — NOT
-    global ANN post-filtering — so recall is perfect regardless of k.
+    Uses exact KNN via graph traversal and real-time cosine similarity -- NOT
+    global ANN post-filtering -- so recall is perfect regardless of k.
 
     Args:
         session:         Active Neo4j async session.
@@ -258,7 +260,7 @@ async def search_similar_chunks(
         k:               Number of top chunks to return.
 
     Returns:
-        List of dicts with keys: content, chunk_index, score.
+        List of dicts with keys: content, chunk_index, section_type, score.
     """
     result = await session.run(
         Q.SEARCH_SIMILAR_CHUNKS,
@@ -271,6 +273,62 @@ async def search_similar_chunks(
         {
             "content": record["content"],
             "chunk_index": record["chunk_index"],
+            "section_type": record.get("section_type", "Unknown"),
+            "score": record["score"],
+        }
+        for record in records
+    ]
+
+
+async def search_similar_chunks(
+    session: AsyncSession,
+    song_id: str,
+    query_embedding: list[float],
+    k: int = 4,
+) -> list[dict]:
+    """
+    Backward-compatible alias for search_vector_chunks().
+
+    Existing callers (e.g. tests, notebooks) will continue to work without
+    any changes. New code should call search_vector_chunks() directly.
+    """
+    return await search_vector_chunks(session, song_id, query_embedding, k)
+
+
+async def search_bm25_chunks(
+    session: AsyncSession,
+    song_id: str,
+    query_text: str,
+    k: int = 8,
+) -> list[dict]:
+    """
+    Retrieve lyric chunks for a song using BM25 full-text (keyword) search.
+
+    The Neo4j full-text index is global, but results are filtered to the
+    specific song via ``WHERE node.song_id = $song_id`` before the LIMIT
+    is applied.  No results from other songs can appear.
+
+    Args:
+        session:    Active Neo4j async session.
+        song_id:    Restrict results to this song's chunks only.
+        query_text: Raw query string for full-text matching.
+        k:          Maximum number of chunks to return.
+
+    Returns:
+        List of dicts with keys: content, chunk_index, section_type, score.
+    """
+    result = await session.run(
+        Q.SEARCH_BM25_CHUNKS,
+        song_id=song_id,
+        query_text=query_text,
+        k=k,
+    )
+    records = [record async for record in result]
+    return [
+        {
+            "content": record["content"],
+            "chunk_index": record["chunk_index"],
+            "section_type": record.get("section_type", "Unknown"),
             "score": record["score"],
         }
         for record in records
@@ -304,3 +362,17 @@ async def setup_vector_index(session: AsyncSession) -> None:
         logger.info("Neo4j vector index initialized (chunk_embedding_index)")
     except Exception as e:
         logger.warning(f"Vector index setup note: {e}")
+
+
+async def setup_bm25_index(session: AsyncSession) -> None:
+    """
+    Create the Chunk full-text (BM25) index. Safe to call repeatedly (IF NOT EXISTS).
+
+    The index covers Chunk.content and is used by search_bm25_chunks().
+    Results are always scoped to a specific song via WHERE in the query.
+    """
+    try:
+        await session.run(Q.SETUP_BM25_INDEX)
+        logger.info("Neo4j BM25 full-text index initialized (chunk_content_bm25_index)")
+    except Exception as e:
+        logger.warning(f"BM25 index setup note: {e}")

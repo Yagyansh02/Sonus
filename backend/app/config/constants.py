@@ -19,7 +19,45 @@ CHUNK_SEPARATORS: list[str] = [
     " ",      # word boundaries
 ]
 
-RETRIEVER_K = 4  # number of chunks returned per query
+RETRIEVER_K = 4       # top-k chunks returned per query (after RRF fusion)
+BM25_RETRIEVER_K = 8  # broader BM25 candidate pool fed into RRF (≥ RETRIEVER_K)
+
+# ── Prompt: Lyrics Structure Analysis ───────────────────────────
+
+LYRICS_STRUCTURE_PROMPT = (
+    "You are an expert music structure analyst specialising in song lyric segmentation.\n\n"
+    "## Objective\n\n"
+    "Analyse the raw lyrics provided below and divide them into their logical musical sections.\n\n"
+    "Typical section types include (but are not limited to):\n\n"
+    "- Intro\n"
+    "- Verse\n"
+    "- Pre-Chorus\n"
+    "- Chorus\n"
+    "- Post-Chorus\n"
+    "- Refrain\n"
+    "- Bridge\n"
+    "- Instrumental\n"
+    "- Breakdown\n"
+    "- Solo\n"
+    "- Interlude\n"
+    "- Outro\n\n"
+    "If multiple occurrences of the same section exist, number them sequentially "
+    "(e.g. Verse 1, Verse 2, Chorus 1, Chorus 2).\n\n"
+    "## Instructions\n\n"
+    "1. Preserve the lyrics EXACTLY as provided.\n"
+    "2. Do NOT paraphrase, rewrite, correct grammar, punctuation, spelling, or formatting.\n"
+    "3. Do NOT remove repeated lines.\n"
+    "4. Do NOT merge different sections together.\n"
+    "5. If the section boundaries are ambiguous, infer the most likely musical structure "
+    "based on lyrical repetition and common songwriting conventions.\n"
+    "6. Never invent lyrics that are not present.\n"
+    "7. Never omit any lyrics.\n"
+    "8. Every line from the original input must appear exactly once in the output.\n"
+    "9. Preserve blank lines that belong within a section whenever possible.\n\n"
+    "## Lyrics\n\n"
+    "{lyrics}"
+)
+
 
 # ── Prompt: History-Aware Query Reformulation ────────────────────
 

@@ -6,11 +6,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Languages, Search, ArrowRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { LANGUAGES, ROUTES } from '@/constants';
+import { ROUTES } from '@/constants';
 import { PageHeader } from '@/components/layout/page-header';
 import { Container } from '@/components/layout/container';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { PrimaryButton } from '@/components/buttons/primary-button';
 import { SecondaryButton } from '@/components/buttons/secondary-button';
 import { Badge } from '@/components/ui/badge';
@@ -36,12 +35,10 @@ const translateSchema = z.object({
       },
       { message: 'Must be a valid YouTube URL' },
     ),
-  targetLanguage: z.string().min(1, 'Please select a target language'),
+  targetLanguage: z.string().min(1, 'Please enter a target language'),
 });
 
 type TranslateFormData = z.infer<typeof translateSchema>;
-
-const languageOptions = LANGUAGES.map((lang) => ({ value: lang, label: lang }));
 
 /**
  * Dedicated Translate page.
@@ -89,7 +86,7 @@ export default function TranslatePage() {
     <>
       <PageHeader
         title="Translate"
-        subtitle="Paste a YouTube link and select a language. We'll transcribe the song and deliver a literary translation that preserves the poetry."
+        subtitle="Paste a YouTube link and enter a language. We'll transcribe the song and deliver a literary translation that preserves the poetry."
       />
 
       <Container className="pb-20">
@@ -107,11 +104,10 @@ export default function TranslatePage() {
                 error={errors.youtubeUrl?.message}
                 {...register('youtubeUrl')}
               />
-              <Select
+              <Input
                 id="translate-lang"
                 label="Target Language"
-                options={languageOptions}
-                placeholder="Select a language"
+                placeholder="e.g., Spanish, French, Japanese"
                 error={errors.targetLanguage?.message}
                 {...register('targetLanguage')}
               />

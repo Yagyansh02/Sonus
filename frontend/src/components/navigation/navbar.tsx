@@ -6,9 +6,9 @@ import { Menu } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { NAV_ITEMS, ROUTES } from '@/constants';
 import { useScroll } from '@/hooks/use-scroll';
-import { NavLink } from './nav-link';
 import { MobileMenu } from './mobile-menu';
 import { IconButton } from '@/components/buttons/icon-button';
+import { GooeyNav } from './gooey-nav';
 
 /**
  * Sticky navbar.
@@ -41,10 +41,8 @@ export function Navbar() {
           </Link>
 
           {/* Desktop links */}
-          <div className="hidden items-center gap-8 lg:flex">
-            {NAV_ITEMS.map((item) => (
-              <NavLink key={item.href} href={item.href} label={item.label} />
-            ))}
+          <div className="hidden lg:block">
+            <GooeyNav items={NAV_ITEMS} />
           </div>
 
           {/* Mobile hamburger */}

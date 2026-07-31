@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import { Languages } from 'lucide-react';
-import { LANGUAGES } from '@/constants';
 import { useTranslateSong, useTranslations } from '@/hooks/use-translation';
 import { PrimaryButton } from '@/components/buttons/primary-button';
-import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/shared/loading-spinner';
 import { ErrorState } from '@/components/shared/error-state';
@@ -16,12 +15,6 @@ import { formatConfidence } from '@/utils/format';
 interface TranslationTabProps {
   songId: string;
 }
-
-const languageOptions = LANGUAGES.map((lang) => ({
-  value: lang,
-  label: lang,
-}));
-
 /**
  * Translation tab with language selector, translate action, and translations list.
  */
@@ -49,11 +42,10 @@ export function TranslationTab({ songId }: TranslationTabProps) {
           </h3>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <Select
+              <Input
                 id="target-language"
                 label="Target Language"
-                options={languageOptions}
-                placeholder="Select a language"
+                placeholder="e.g., Spanish, French, Japanese"
                 value={targetLang}
                 onChange={(e) => setTargetLang(e.target.value)}
               />

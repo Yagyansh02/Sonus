@@ -20,7 +20,15 @@
   }
 
   body {
-    @apply bg-primary-bg text-primary-text font-body leading-relaxed overflow-x-hidden;
+    /*
+     * Background is intentionally transparent here.
+     * Pages that need a solid bg (e.g. home) use the ScrollThemeProvider
+     * fixed backdrop. Other pages inherit bg-primary-bg via their layout
+     * wrapper. This prevents a body-level colour from flashing through
+     * during theme transitions.
+     */
+    background-color: #0D0D0D;
+    @apply text-primary-text font-body leading-relaxed overflow-x-hidden;
   }
 
   /* Typography */

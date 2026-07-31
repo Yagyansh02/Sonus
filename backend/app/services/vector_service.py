@@ -1,11 +1,18 @@
 """
 Vector embedding service.
 
-Provides HuggingFace-based text embedding and lyric chunking,
+Provides HuggingFace-based text embedding and structure-aware lyric chunking,
 storing all vectors directly in Neo4j Chunk nodes.
 
 ChromaDB has been fully removed. All vector operations now go through
 neo4j_service.store_chunks() and neo4j_service.search_similar_chunks().
+
+Chunking strategy:
+  1. lyrics_structurizer.tag_song_structure() segments the transcript into
+     labelled musical sections (Verse 1, Chorus, Bridge, etc.) using Groq.
+  2. RecursiveCharacterTextSplitter is applied WITHIN each section boundary,
+     so recurring units like choruses are never split across thematic contexts.
+  3. Each LyricChunk carries a section_type field for context-aware retrieval.
 """
 
 from langchain_core.documents import Document
@@ -16,10 +23,10 @@ from app.config.constants import (
     CHUNK_OVERLAP,
     CHUNK_SEPARATORS,
     CHUNK_SIZE,
-    RETRIEVER_K,
 )
 from app.config.settings import get_settings
 from app.schemas.chunk import LyricChunk
+from app.services import lyrics_structurizer
 from app.utils.helpers import generate_id
 from app.utils.logger import get_logger
 
@@ -53,22 +60,25 @@ def embed_text(text: str) -> list[float]:
     return embeddings.embed_query(text)
 
 
-def _chunk_text(content: str, metadata: dict) -> list[Document]:
+def _split_section(text: str, metadata: dict) -> list[Document]:
     """
-    Split a transcript into lyric-aware chunks.
+    Apply RecursiveCharacterTextSplitter within the boundaries of a single
+    musical section.  Reuses the shared chunking config from constants.py.
 
-    Uses stanza breaks, line breaks, and musical notation markers
-    as preferred split points before falling back to word boundaries.
+    Args:
+        text:     The section lyrics text.
+        metadata: Metadata dict already containing song_id and section_type.
+
+    Returns:
+        List of LangChain Documents, each representing a sub-chunk of the section.
     """
-    text_splitter = RecursiveCharacterTextSplitter(
+    splitter = RecursiveCharacterTextSplitter(
         separators=CHUNK_SEPARATORS,
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
     )
-    doc = Document(page_content=content, metadata=metadata)
-    chunks = text_splitter.split_documents([doc])
-    logger.info(f"Produced {len(chunks)} lyric chunks")
-    return chunks
+    doc = Document(page_content=text, metadata=metadata)
+    return splitter.split_documents([doc])
 
 
 def chunk_and_embed(
@@ -77,46 +87,84 @@ def chunk_and_embed(
     metadata: dict | None = None,
 ) -> list[LyricChunk]:
     """
-    Chunk a transcript and embed each chunk, returning typed LyricChunk DTOs.
+    Chunk a transcript structurally and embed each chunk.
+
+    Pipeline:
+      1. Call lyrics_structurizer.tag_song_structure() to get labelled sections.
+      2. For each section, apply RecursiveCharacterTextSplitter within the section
+         boundary (preserves thematic units like choruses).
+      3. Batch-embed all resulting chunks in a single HuggingFace call.
+      4. Return typed LyricChunk DTOs ready for neo4j_service.store_chunks().
 
     Each returned LyricChunk has:
-        chunk_id    (str)         – unique identifier (UUID hex)
-        song_id     (str)         – owning song
-        content     (str)         – chunk text
-        embedding   (list[float]) – 384-dim HuggingFace vector
-        chunk_index (int)         – positional order within the song
+        chunk_id     (str)         -- unique identifier (UUID hex)
+        song_id      (str)         -- owning song
+        content      (str)         -- chunk text
+        embedding    (list[float]) -- 384-dim HuggingFace vector
+        chunk_index  (int)         -- positional order within the song
+        section_type (str)         -- musical section label (e.g. "Chorus")
 
     Args:
-        song_id:             The owning song's ID (used in metadata).
+        song_id:             The owning song ID.
         transcript_content:  Full transcript text to chunk.
         metadata:            Optional extra metadata attached to each chunk.
 
     Returns:
         List of LyricChunk DTOs ready for neo4j_service.store_chunks().
     """
-    doc_metadata: dict = {"song_id": song_id}
+    base_metadata: dict = {"song_id": song_id}
     if metadata:
-        doc_metadata.update(metadata)
+        base_metadata.update(metadata)
 
-    logger.info(f"Chunking and embedding transcript for song {song_id}")
-    chunks = _chunk_text(transcript_content, doc_metadata)
+    logger.info(f"Starting structural chunking for song {song_id}")
 
+    # -- 1. Tag song structure via Groq -----------------------------------------
+    sections = lyrics_structurizer.tag_song_structure(transcript_content)
+
+    if not sections:
+        logger.warning(f"[{song_id}] No sections returned -- skipping embed")
+        return []
+
+    logger.info(f"[{song_id}] {len(sections)} sections to chunk")
+
+    # -- 2. Split within each section boundary -----------------------------------
+    all_documents: list[tuple[Document, str]] = []  # (doc, section_type)
+    for section in sections:
+        if not section.lyrics.strip():
+            continue
+
+        section_meta = {**base_metadata, "section_type": section.section_type}
+        sub_docs = _split_section(section.lyrics, section_meta)
+
+        for doc in sub_docs:
+            all_documents.append((doc, section.section_type))
+
+    if not all_documents:
+        logger.warning(f"[{song_id}] All sections were empty after splitting")
+        return []
+
+    logger.info(f"[{song_id}] Produced {len(all_documents)} chunks across all sections")
+
+    # -- 3. Batch embed ----------------------------------------------------------
     embedder = get_embeddings()
-    texts = [c.page_content for c in chunks]
-
-    # Batch embed all chunks in one call (more efficient than one-by-one)
+    texts = [doc.page_content for doc, _ in all_documents]
     vectors = embedder.embed_documents(texts)
 
+    # -- 4. Build LyricChunk DTOs ------------------------------------------------
     result: list[LyricChunk] = [
         LyricChunk(
             chunk_id=generate_id(),
             song_id=song_id,
-            content=chunk.page_content,
+            content=doc.page_content,
             embedding=vector,
             chunk_index=idx,
+            section_type=section_type,
         )
-        for idx, (chunk, vector) in enumerate(zip(chunks, vectors))
+        for idx, ((doc, section_type), vector) in enumerate(zip(all_documents, vectors))
     ]
 
-    logger.info(f"Embedded {len(result)} chunks for song {song_id}")
+    logger.info(
+        f"[{song_id}] Embedded {len(result)} chunks -- "
+        f"sections: {', '.join(s.section_type for s in sections)}"
+    )
     return result

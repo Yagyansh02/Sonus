@@ -1,0 +1,196 @@
+/* ─── Easing ─────────────────────────────────────────────────────────────────── */
+:root {
+  --linear-ease: linear(
+    0, 0.068, 0.19 2.7%, 0.804 8.1%, 1.037, 1.199 13.2%,
+    1.245, 1.27 15.8%, 1.274, 1.272 17.4%, 1.249 19.1%,
+    0.996 28%, 0.949, 0.928 33.3%, 0.926, 0.933 36.8%,
+    1.001 45.6%, 1.013, 1.019 50.8%, 1.018 54.4%, 1 63.1%,
+    0.995 68%, 1.001 85%, 1
+  );
+}
+
+/* ─── Container ──────────────────────────────────────────────────────────────── */
+.gooey-nav-container {
+  position: relative;
+  /* Establish a stacking context so z-index values are scoped here */
+  isolation: isolate;
+}
+
+/* ─── Nav list ───────────────────────────────────────────────────────────────── */
+.gooey-nav-container nav {
+  display: flex;
+  position: relative;
+}
+
+.gooey-nav-container nav ul {
+  display: flex;
+  gap: 0.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  position: relative;
+  /* Must be above the .gooey-burst layer so text is always visible */
+  z-index: 2;
+}
+
+/* ─── Nav items ──────────────────────────────────────────────────────────────── */
+.gooey-nav-container nav ul li {
+  border-radius: 100vw;
+  position: relative;
+  cursor: pointer;
+  color: #8d8d8d;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color 0.25s ease;
+}
+
+.gooey-nav-container nav ul li:hover {
+  color: #cfc8be;
+}
+
+/* The link itself must sit above the ::after pill */
+.gooey-nav-container nav ul li a {
+  display: inline-block;
+  padding: 0.5em 1em;
+  position: relative;
+  z-index: 1; /* above the li::after pill within the li stacking context */
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Keyboard focus ring */
+.gooey-nav-container nav ul li:focus-within:has(:focus-visible) {
+  box-shadow: 0 0 0 2px #f7f2e8;
+}
+
+/* ─── Active pill (purely CSS, no JS positioning needed) ─────────────────────── */
+
+/* The pill is a pseudo-element behind the link text */
+.gooey-nav-container nav ul li::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 100vw;
+  background: #f15c43;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+  z-index: 0; /* behind the <a> (z-index:1) but within the li */
+}
+
+.gooey-nav-container nav ul li.active {
+  color: #f7f2e8;
+}
+
+.gooey-nav-container nav ul li.active::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ─── Particle burst layer ───────────────────────────────────────────────────── */
+
+/*
+ * .gooey-burst sits below the nav list (z-index: 1 < 2).
+ * Its sole job is hosting the particle animations.
+ * It never covers the nav text because the <ul> is above it.
+ */
+.gooey-burst {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+  filter: url('#gooey-burst-filter');
+}
+
+/* ─── Particles ──────────────────────────────────────────────────────────────── */
+
+.particle,
+.point {
+  display: block;
+  opacity: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 100%;
+  transform-origin: center;
+}
+
+.particle {
+  --time: 5s;
+  position: absolute;
+  top: calc(50% - 10px);
+  left: calc(50% - 10px);
+  animation: particle var(--time) ease 1 -350ms;
+}
+
+.point {
+  background: var(--color);
+  opacity: 1;
+  animation: point var(--time) ease 1 -350ms;
+}
+
+/* ─── Keyframes ──────────────────────────────────────────────────────────────── */
+
+@keyframes particle {
+  0% {
+    transform: rotate(0deg) translate(var(--start-x), var(--start-y));
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+
+  70% {
+    transform: rotate(calc(var(--rotate) * 0.5))
+      translate(calc(var(--end-x) * 1.2), calc(var(--end-y) * 1.2));
+    opacity: 1;
+    animation-timing-function: ease;
+  }
+
+  85% {
+    transform: rotate(calc(var(--rotate) * 0.66))
+      translate(var(--end-x), var(--end-y));
+    opacity: 1;
+  }
+
+  100% {
+    transform: rotate(calc(var(--rotate) * 1.2))
+      translate(calc(var(--end-x) * 0.5), calc(var(--end-y) * 0.5));
+    opacity: 1;
+  }
+}
+
+@keyframes point {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+
+  25% {
+    transform: scale(calc(var(--scale) * 0.25));
+  }
+
+  38% {
+    opacity: 1;
+  }
+
+  65% {
+    transform: scale(var(--scale));
+    opacity: 1;
+    animation-timing-function: ease;
+  }
+
+  85% {
+    transform: scale(var(--scale));
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}

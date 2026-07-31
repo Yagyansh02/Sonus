@@ -30,34 +30,54 @@ const FEATURES = [
 
 /**
  * Three-column feature grid highlighting the core capabilities.
+ *
+ * The background is controlled by <ScrollThemeProvider> in page.tsx.
+ * This component places two invisible sentinel <div>s that act as
+ * ScrollTrigger anchors:
+ *   data-theme-trigger="light"  — starts dark→orange transition
+ *   data-theme-trigger="dark"   — starts orange→dark transition
  */
 export function FeaturesSection() {
   return (
-    <Section className="bg-secondary-bg/50">
-      <Container>
-        <FadeIn className="mb-16 text-center">
-          <span className="text-sm font-medium tracking-wider text-accent uppercase">
-            Capabilities
-          </span>
-          <h2 className="mt-4 font-heading">
-            Three Pillars of
-            <br />
-            Musical Understanding
-          </h2>
-        </FadeIn>
+    <div className="relative w-full">
+      {/* Sentinel: start of orange theme zone */}
+      <div data-theme-trigger="light" aria-hidden="true" />
 
-        <StaggerContainer className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((feature) => (
-            <StaggerItem key={feature.title}>
-              <FeatureCard
-                icon={feature.icon}
-                title={feature.title}
-                description={feature.description}
-              />
-            </StaggerItem>
-          ))}
-        </StaggerContainer>
-      </Container>
-    </Section>
+      <Section className="bg-transparent relative z-10">
+        <Container>
+          <FadeIn className="mb-16 text-center">
+            <span
+              className="text-sm font-medium tracking-wider uppercase inline-block"
+              style={{ color: 'var(--theme-sub-color, #F15C43)' }}
+            >
+              Capabilities
+            </span>
+            <h2
+              className="mt-4 font-heading text-4xl md:text-5xl lg:text-6xl"
+              style={{ color: 'var(--theme-title-color, #F7F2E8)' }}
+            >
+              Three Pillars of
+              <br />
+              Musical Understanding
+            </h2>
+          </FadeIn>
+
+          <StaggerContainer className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map((feature) => (
+              <StaggerItem key={feature.title}>
+                <FeatureCard
+                  icon={feature.icon}
+                  title={feature.title}
+                  description={feature.description}
+                />
+              </StaggerItem>
+            ))}
+          </StaggerContainer>
+        </Container>
+      </Section>
+
+      {/* Sentinel: end of orange theme zone — placed after the section content */}
+      <div data-theme-trigger="dark" aria-hidden="true" />
+    </div>
   );
 }

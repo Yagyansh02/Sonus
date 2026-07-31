@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
       2. Initialize Neo4j driver and verify connectivity
       3. Run database constraints
       4. Create vector index on Chunk.embedding
+      5. Create BM25 full-text index on Chunk.content
     Shutdown:
       1. Close Neo4j driver
     """
@@ -45,10 +46,11 @@ async def lifespan(app: FastAPI):
     # Initialize Neo4j
     driver = await init_driver()
 
-    # Run constraints and vector index (idempotent — IF NOT EXISTS)
+    # Run constraints and indexes (idempotent -- IF NOT EXISTS)
     async with driver.session(database=settings.NEO4J_DATABASE) as session:
         await neo4j_service.setup_constraints(session)
         await neo4j_service.setup_vector_index(session)
+        await neo4j_service.setup_bm25_index(session)
 
     logger.info("Application startup complete")
 

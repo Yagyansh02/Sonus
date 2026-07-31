@@ -20,3 +20,8 @@ class LyricChunk(BaseModel):
     content: str = Field(..., description="Chunk text")
     embedding: list[float] = Field(..., description="384-dim HuggingFace embedding vector")
     chunk_index: int = Field(..., description="Positional order within the song (0-indexed)")
+    section_type: str = Field(
+        default="Unknown",
+        description="Musical section label (e.g. 'Verse 1', 'Chorus', 'Bridge'). "
+                    "Set by lyrics_structurizer; defaults to 'Unknown' on fallback.",
+    )
