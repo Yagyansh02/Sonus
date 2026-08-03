@@ -36,14 +36,15 @@ logger = get_logger("services.vector")
 
 
 class HuggingFaceAPIEmbeddings:
-    """Embeddings runner that calls Hugging Face Serverless Inference API directly."""
+    """Embeddings runner that calls Hugging Face Inference Providers API directly."""
 
     def __init__(self, model_name: str, hf_token: str):
         if "/" not in model_name:
             self.model_id = f"sentence-transformers/{model_name}"
         else:
             self.model_id = model_name
-        self.api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_id}"
+        # Old api-inference.huggingface.co is dead (410 Gone) — use the new router
+        self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_id}/pipeline/feature-extraction"
         self.headers = {"Authorization": f"Bearer {hf_token}"}
 
     def _call_api(self, texts: list[str] | str) -> Any:
@@ -56,6 +57,7 @@ class HuggingFaceAPIEmbeddings:
                 )
                 if response.status_code != 200:
                     raise ExternalServiceError(
+                        service="Hugging Face",
                         detail=f"Hugging Face API error ({response.status_code}): {response.text}"
                     )
                 return response.json()
@@ -63,7 +65,10 @@ class HuggingFaceAPIEmbeddings:
             logger.error(f"Hugging Face API connection failed: {e}")
             if isinstance(e, ExternalServiceError):
                 raise e
-            raise ExternalServiceError(detail=f"Hugging Face API connection failed: {str(e)}")
+            raise ExternalServiceError(
+                service="Hugging Face",
+                detail=f"Hugging Face API connection failed: {str(e)}"
+            )
 
     def embed_query(self, text: str) -> list[float]:
         result = self._call_api(text)
@@ -71,7 +76,10 @@ class HuggingFaceAPIEmbeddings:
             if isinstance(result[0], list):
                 return result[0]
             return result
-        raise ExternalServiceError(detail="Invalid response format from Hugging Face API")
+        raise ExternalServiceError(
+            service="Hugging Face",
+            detail="Invalid response format from Hugging Face API"
+        )
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -79,7 +87,10 @@ class HuggingFaceAPIEmbeddings:
         result = self._call_api(texts)
         if isinstance(result, list):
             return result
-        raise ExternalServiceError(detail="Invalid response format from Hugging Face API")
+        raise ExternalServiceError(
+            service="Hugging Face",
+            detail="Invalid response format from Hugging Face API"
+        )
 
 
 # Module-level singleton for embeddings (expensive to initialize)
