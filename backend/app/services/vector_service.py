@@ -16,6 +16,7 @@ Chunking strategy:
 """
 
 from typing import Any
+import httpx
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -28,9 +29,58 @@ from app.config.settings import get_settings
 from app.schemas.chunk import LyricChunk
 from app.services import lyrics_structurizer
 from app.utils.helpers import generate_id
+from app.utils.exceptions import ExternalServiceError
 from app.utils.logger import get_logger
 
 logger = get_logger("services.vector")
+
+
+class HuggingFaceAPIEmbeddings:
+    """Embeddings runner that calls Hugging Face Serverless Inference API directly."""
+
+    def __init__(self, model_name: str, hf_token: str):
+        if "/" not in model_name:
+            self.model_id = f"sentence-transformers/{model_name}"
+        else:
+            self.model_id = model_name
+        self.api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.model_id}"
+        self.headers = {"Authorization": f"Bearer {hf_token}"}
+
+    def _call_api(self, texts: list[str] | str) -> Any:
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    self.api_url,
+                    headers=self.headers,
+                    json={"inputs": texts, "options": {"wait_for_model": True}},
+                )
+                if response.status_code != 200:
+                    raise ExternalServiceError(
+                        detail=f"Hugging Face API error ({response.status_code}): {response.text}"
+                    )
+                return response.json()
+        except Exception as e:
+            logger.error(f"Hugging Face API connection failed: {e}")
+            if isinstance(e, ExternalServiceError):
+                raise e
+            raise ExternalServiceError(detail=f"Hugging Face API connection failed: {str(e)}")
+
+    def embed_query(self, text: str) -> list[float]:
+        result = self._call_api(text)
+        if isinstance(result, list) and len(result) > 0:
+            if isinstance(result[0], list):
+                return result[0]
+            return result
+        raise ExternalServiceError(detail="Invalid response format from Hugging Face API")
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        result = self._call_api(texts)
+        if isinstance(result, list):
+            return result
+        raise ExternalServiceError(detail="Invalid response format from Hugging Face API")
+
 
 # Module-level singleton for embeddings (expensive to initialize)
 _embeddings: Any = None
@@ -42,12 +92,10 @@ def get_embeddings() -> Any:
     if _embeddings is None:
         settings = get_settings()
         if settings.HF_TOKEN:
-            logger.info("Initializing HuggingFace Endpoint Embeddings (Remote API)")
-            from langchain_huggingface import HuggingFaceEndpointEmbeddings
-            _embeddings = HuggingFaceEndpointEmbeddings(
-                model=settings.EMBEDDING_MODEL,
-                task="feature-extraction",
-                huggingfacehub_api_token=settings.HF_TOKEN,
+            logger.info("Initializing HuggingFace API Embeddings (Remote Inference)")
+            _embeddings = HuggingFaceAPIEmbeddings(
+                model_name=settings.EMBEDDING_MODEL,
+                hf_token=settings.HF_TOKEN,
             )
         else:
             logger.info(f"Initializing HuggingFace Embeddings (Local): {settings.EMBEDDING_MODEL}")
