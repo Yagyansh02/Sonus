@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # ── ElevenLabs (Speech-to-Text Fallback) ──────────────────────
     ELEVENLABS_API_KEY: str = ""
 
+    # ── Hugging Face ──────────────────────────────────────────────
+    # If provided, uses Hugging Face Serverless Inference API for embeddings (saves RAM)
+    HF_TOKEN: str = ""
+
     # ── Neo4j ─────────────────────────────────────────────────────
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"

@@ -15,8 +15,8 @@ Chunking strategy:
   3. Each LyricChunk carries a section_type field for context-aware retrieval.
 """
 
+from typing import Any
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config.constants import (
@@ -33,16 +33,26 @@ from app.utils.logger import get_logger
 logger = get_logger("services.vector")
 
 # Module-level singleton for embeddings (expensive to initialize)
-_embeddings: HuggingFaceEmbeddings | None = None
+_embeddings: Any = None
 
 
-def get_embeddings() -> HuggingFaceEmbeddings:
+def get_embeddings() -> Any:
     """Lazy-initialize the HuggingFace embedding model (singleton)."""
     global _embeddings
     if _embeddings is None:
         settings = get_settings()
-        logger.info(f"Initializing HuggingFace embeddings: {settings.EMBEDDING_MODEL}")
-        _embeddings = HuggingFaceEmbeddings(model_name=settings.EMBEDDING_MODEL)
+        if settings.HF_TOKEN:
+            logger.info("Initializing HuggingFace Endpoint Embeddings (Remote API)")
+            from langchain_huggingface import HuggingFaceEndpointEmbeddings
+            _embeddings = HuggingFaceEndpointEmbeddings(
+                model=settings.EMBEDDING_MODEL,
+                task="feature-extraction",
+                huggingfacehub_api_token=settings.HF_TOKEN,
+            )
+        else:
+            logger.info(f"Initializing HuggingFace Embeddings (Local): {settings.EMBEDDING_MODEL}")
+            from langchain_huggingface import HuggingFaceEmbeddings
+            _embeddings = HuggingFaceEmbeddings(model_name=settings.EMBEDDING_MODEL)
     return _embeddings
 
 
