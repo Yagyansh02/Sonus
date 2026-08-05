@@ -16,18 +16,24 @@ from app.utils.exceptions import YouTubeExtractionError
 
 logger = get_logger("services.youtube")
 
+# Resolves to project root: app/services/youtube_service.py -> app/services -> app/ -> root/
+COOKIE_FILE = str(Path(__file__).resolve().parent.parent.parent / "youtube_cookies.txt")
+
 
 def fetch_video_metadata(video_url: str) -> dict:
     """
     Safely extract video metadata using yt-dlp.
 
-    Migrated from original main.py lines 39-53.
-
     Returns:
         dict with keys: title, artist, thumbnail
     """
     logger.info(f"Fetching video metadata for: {video_url}")
-    ydl_opts = {"extract_flat": True, "quiet": True, "no_warnings": True}
+    ydl_opts = {
+        "extract_flat": True, 
+        "quiet": True, 
+        "no_warnings": True,
+        "cookiefile": COOKIE_FILE,
+    }
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
@@ -48,13 +54,8 @@ def download_audio(video_url: str) -> Path:
     """
     Download audio from a YouTube video as MP3.
 
-    Used as part of the ElevenLabs transcript fallback pipeline.
-
     Returns:
         Path to the downloaded MP3 file in a temp directory.
-
-    Raises:
-        YouTubeExtractionError: If the download fails.
     """
     video_id = extract_video_id(video_url) or "audio"
     logger.info(f"Downloading audio for video_id={video_id}")
@@ -64,7 +65,7 @@ def download_audio(video_url: str) -> Path:
 
     ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": str(output_path.with_suffix("")),  # yt-dlp adds extension
+        "outtmpl": str(output_path.with_suffix("")),
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -74,18 +75,17 @@ def download_audio(video_url: str) -> Path:
         ],
         "quiet": True,
         "no_warnings": True,
+        "cookiefile": COOKIE_FILE,
     }
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
 
-        # yt-dlp may produce the file with .mp3 extension
         if output_path.exists():
             logger.info(f"Audio downloaded: {output_path}")
             return output_path
 
-        # Check alternate extensions yt-dlp might produce
         for ext in [".mp3", ".m4a", ".webm", ".opus"]:
             alt = output_path.with_suffix(ext)
             if alt.exists():

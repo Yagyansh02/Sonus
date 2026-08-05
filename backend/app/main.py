@@ -4,11 +4,14 @@ Sonus API — FastAPI Application Entry Point
 Production-grade cultural song analysis & interpretation engine.
 
 Lifecycle:
-  - Startup:  Initialize Neo4j driver, run constraints, create vector index, set up logging.
+  - Startup:  Generate cookie file, initialize Neo4j driver, run constraints, create vector index, set up logging.
   - Shutdown: Close Neo4j driver gracefully.
 """
 
 from contextlib import asynccontextmanager
+import os
+import base64
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,19 +25,28 @@ from app.utils.exceptions import SonusException, sonus_exception_handler
 from app.utils.logger import get_logger, setup_logging
 
 
+def setup_youtube_cookies(logger):
+    """Recreates youtube_cookies.txt at runtime from YOUTUBE_COOKIES_BASE64 env var."""
+    # Resolves to root folder: app/main.py -> app/ -> root/
+    cookie_path = Path(__file__).resolve().parent.parent / "youtube_cookies.txt"
+    cookie_env = os.getenv("YOUTUBE_COOKIES_BASE64")
+
+    if cookie_env:
+        try:
+            decoded_cookies = base64.b64decode(cookie_env).decode("utf-8")
+            with open(cookie_path, "w", encoding="utf-8") as f:
+                f.write(decoded_cookies)
+            logger.info("Successfully generated youtube_cookies.txt from Environment Variable.")
+        except Exception as e:
+            logger.error(f"Failed to decode YOUTUBE_COOKIES_BASE64 environment variable: {e}")
+    else:
+        logger.warning("YOUTUBE_COOKIES_BASE64 not found in environment variables.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
-
-    Startup:
-      1. Configure structured logging
-      2. Initialize Neo4j driver and verify connectivity
-      3. Run database constraints
-      4. Create vector index on Chunk.embedding
-      5. Create BM25 full-text index on Chunk.content
-    Shutdown:
-      1. Close Neo4j driver
     """
     # ── Startup ──────────────────────────────────────────────────
     setup_logging()
@@ -43,7 +55,10 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
 
-    # Initialize Neo4j
+    # 1. Setup cookies BEFORE services try to use them!
+    setup_youtube_cookies(logger)
+
+    # 2. Initialize Neo4j
     driver = await init_driver()
 
     # Run constraints and indexes (idempotent -- IF NOT EXISTS)
@@ -54,7 +69,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Application startup complete")
 
-    yield
+    yield  # Application runs while suspended here
 
     # ── Shutdown ─────────────────────────────────────────────────
     logger.info("Shutting down application")
@@ -112,6 +127,6 @@ def create_app() -> FastAPI:
 # The app instance used by uvicorn
 app = create_app()
 
-import uvicorn
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

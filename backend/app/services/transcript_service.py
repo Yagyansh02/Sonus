@@ -1,49 +1,54 @@
 """
 Transcript extraction service.
 
-Wraps LangChain's YoutubeLoader for transcript retrieval.
-Migrated from the original main.py fetch_youtube_transcript function.
+Wraps youtube_transcript_api directly for transcript retrieval, 
+bypassing LangChain's loader to allow cookie authentication.
 """
 
-from langchain_community.document_loaders import YoutubeLoader
+from pathlib import Path
+from youtube_transcript_api import YouTubeTranscriptApi
 from langchain_core.documents import Document
 
 from app.utils.logger import get_logger
+from app.utils.helpers import extract_video_id
 
 logger = get_logger("services.transcript")
+
+# Resolves to project root: app/services/transcript_service.py -> app/services -> app/ -> root/
+COOKIE_FILE = str(Path(__file__).resolve().parent.parent.parent / "youtube_cookies.txt")
 
 
 def fetch_youtube_transcript(video_url: str) -> list[Document] | None:
     """
-    Attempt to load transcripts/captions from YouTube using LangChain.
-
-    Migrated from original main.py lines 56-82 (loader portion only;
-    metadata enrichment is handled by the processor layer).
-
-    Args:
-        video_url: Full YouTube video URL.
+    Attempt to load transcripts/captions from YouTube using youtube_transcript_api directly.
 
     Returns:
-        List of LangChain Documents if successful, None if no transcript
-        is available.
+        List of LangChain Documents if successful, None if no transcript is available.
     """
     logger.info(f"Attempting YouTube transcript extraction for: {video_url}")
+    video_id = extract_video_id(video_url)
+    
+    if not video_id:
+        logger.warning(f"Could not extract video ID from url: {video_url}")
+        return None
 
     try:
-        loader = YoutubeLoader.from_youtube_url(
-            video_url,
-            add_video_info=False,
-            language=["en", "hi", "es", "fr", "de", "ja", "ko", "pt", "zh"],
+        # Fetch transcript directly using cookies
+        transcript_list = YouTubeTranscriptApi.get_transcript(
+            video_id, 
+            languages=["en", "hi", "es", "fr", "de", "ja", "ko", "pt", "zh"],
+            cookies=COOKIE_FILE
         )
-        documents = loader.load()
-
-        if not documents:
-            logger.warning("YoutubeLoader returned no documents")
-            return None
-
-        # Log a preview of what was loaded
+        
+        # Combine text from transcript segments
+        full_text = " ".join([item['text'] for item in transcript_list])
+        
+        # Return as a LangChain Document to match the processor pipeline
+        documents = [Document(page_content=full_text)]
+        
         content_preview = documents[0].page_content[:100]
-        logger.info(f"Transcript loaded ({len(documents)} doc(s)): '{content_preview}...'")
+        logger.info(f"Transcript loaded (1 doc(s)): '{content_preview}...'")
+        
         return documents
 
     except Exception as e:

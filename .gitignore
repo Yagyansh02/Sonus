@@ -76,3 +76,5 @@ chroma_data/
 .DS_Store
 Thumbs.db
 *.pem
+
+youtube_cookies.txt
