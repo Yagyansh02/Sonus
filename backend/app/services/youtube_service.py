@@ -29,11 +29,12 @@ def fetch_video_metadata(video_url: str) -> dict:
     """
     logger.info(f"Fetching video metadata for: {video_url}")
     ydl_opts = {
-        "extract_flat": True, 
-        "quiet": True, 
-        "no_warnings": True,
-        "cookiefile": COOKIE_FILE,
-    }
+    "extract_flat": True,
+    "quiet": True,
+    "no_warnings": True,
+    "cookiefile": COOKIE_FILE,
+    "extractor_args": {"youtube": {"player_client": ["android"]}},
+}
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
