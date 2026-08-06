@@ -15,6 +15,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from yt_dlp.version import __version__ as YTDLP_VERSION
 
 from app.api import health, rag, songs, transcript, translation
 from app.config.settings import get_settings
@@ -26,21 +27,47 @@ from app.utils.logger import get_logger, setup_logging
 
 
 def setup_youtube_cookies(logger):
-    """Recreates youtube_cookies.txt at runtime from YOUTUBE_COOKIES_BASE64 env var."""
+    """Recreates youtube_cookies.txt at runtime from YOUTUBE_COOKIES_BASE64 env var.
+
+    Validates the decoded content is non-trivial before writing, so a bad/stale
+    env var fails loudly at startup instead of silently producing a useless
+    cookie file that services then quietly ignore (or worse, pass to yt-dlp
+    and get a confusing downstream error).
+    """
     # Resolves to root folder: app/main.py -> app/ -> root/
     cookie_path = Path(__file__).resolve().parent.parent / "youtube_cookies.txt"
     cookie_env = os.getenv("YOUTUBE_COOKIES_BASE64")
 
-    if cookie_env:
-        try:
-            decoded_cookies = base64.b64decode(cookie_env).decode("utf-8")
-            with open(cookie_path, "w", encoding="utf-8") as f:
-                f.write(decoded_cookies)
-            logger.info("Successfully generated youtube_cookies.txt from Environment Variable.")
-        except Exception as e:
-            logger.error(f"Failed to decode YOUTUBE_COOKIES_BASE64 environment variable: {e}")
-    else:
-        logger.warning("YOUTUBE_COOKIES_BASE64 not found in environment variables.")
+    if not cookie_env:
+        logger.warning(
+            "YOUTUBE_COOKIES_BASE64 not found in environment variables. "
+            "Proceeding without cookies — some videos may fail to extract."
+        )
+        return
+
+    try:
+        decoded_cookies = base64.b64decode(cookie_env).decode("utf-8")
+    except Exception as e:
+        logger.error(f"Failed to decode YOUTUBE_COOKIES_BASE64 environment variable: {e}")
+        return
+
+    if "youtube.com" not in decoded_cookies or len(decoded_cookies.strip()) < 20:
+        logger.error(
+            "Decoded YOUTUBE_COOKIES_BASE64 does not look like a valid Netscape "
+            "cookies.txt file (missing 'youtube.com' or too short). Refusing to "
+            "write it — check the env var was exported correctly and is current."
+        )
+        return
+
+    try:
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(decoded_cookies)
+        logger.info(
+            f"Successfully generated youtube_cookies.txt "
+            f"({len(decoded_cookies)} bytes) from environment variable."
+        )
+    except Exception as e:
+        logger.error(f"Failed to write youtube_cookies.txt to {cookie_path}: {e}")
 
 
 @asynccontextmanager
@@ -54,6 +81,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    logger.info(f"Using yt-dlp version {YTDLP_VERSION}")
 
     # 1. Setup cookies BEFORE services try to use them!
     setup_youtube_cookies(logger)
